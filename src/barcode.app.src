@@ -1,0 +1,12 @@
+{application, barcode, [
+    {description, "Barcode images generator"},
+    {vsn, "0.1.0"},
+    {registered, []},
+%    {mod, {barcode_app, []}},
+    {applications, [
+        kernel,
+        stdlib
+    ]},
+    {env, []},
+    {modules, []}
+]}.
