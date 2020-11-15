@@ -3,7 +3,7 @@ barcode
 The library for barcode images generation
 
 Supported types:
-- code128b (most ascii symbols)
+- code128  (ascii symbols, including control chars)
 - ucp_a    (11 digits + 1 check)
 - ean_13   (12 digits + 1 check)
 - ean_8    (7 digits + 1 check)
@@ -14,14 +14,14 @@ How to use
 -----
 
     $ rebar3 shell
-    > barcode:save_png(code128b, "Hello, world!", "code128b.png").
+    > barcode:save_png(code128, "Hello, world!", "code128.png").
     ok
 
-    > barcode:save_text(code128b, "Hello, world!", "code128b.txt").
+    > barcode:save_text(code128, "Hello, world!", "code128.txt").
     ok
 
-    > barcode:png_encode(code128b, "Hello, world!").
+    > barcode:png_encode(code128, "Hello, world!").
     <<...>>
 
-    > barcode:text_encode(code128b, "Hello, world!").
+    > barcode:text_encode(code128, "Hello, world!").
     <<...>>

@@ -5,7 +5,7 @@
          encode/1
         ]).
 
--define(CHAR, "0123456789").
+-define(CHARSET, "0123456789").
 -define(CODE,
         {
          2#0001101,
@@ -23,33 +23,60 @@
 -define(MIDDLE, <<2#01010:5>>).
 -define(STOP, <<2#101:3>>).
 
--spec encode(String :: unicode:chardata()) -> BarCodeBitmap :: bitstring().
-encode(String) ->
-    Chars = string:to_graphemes(String),
-    7 == length(Chars) orelse error(incorrect_arg),
-    {Bin1, Bin2, _, Sum} =
-        lists:foldl(fun(Char, {Bin1, Bin2, I, Sum}) ->
-                           Index = index(Char),
-                           NewSum = Sum + ((I rem 2) * 2 + 1) * Index,
-                           {NewBin1, NewBin2} =
-                               if I =< 4 -> {<<Bin1/bits, (translate(Index, l)):7>>, Bin2};
-                                  true -> {Bin1, <<Bin2/bits, (translate(Index, r)):7>>}
-                               end,
-                           {NewBin1, NewBin2, I + 1, NewSum}
-                    end, {<<>>, <<>>, 1, 0}, Chars),
-    CheckSum = (10 - Sum rem 10) rem 10,
-    CheckSumCode = <<(translate(CheckSum, r)):7>>,
-    <<?START/bits, Bin1/bits, ?MIDDLE/bits, Bin2/bits, CheckSumCode/bits, ?STOP/bits>>.
 
--spec index(Char :: integer()) -> Position :: non_neg_integer().
-index(Char) ->
-    index(Char, ?CHAR, 0).
+-spec encode(Text :: unicode:chardata()) -> BarCodeBitmap :: bitstring() | no_return().
+encode(Text) ->
+    Chars = string:to_graphemes(Text),
+    7 == length(Chars) orelse error(incorrect_text),
+    lists:all(fun(Ch) -> is_member(Ch, ?CHARSET) end, Chars) orelse error(incorrect_text),
+    h1_loop(Chars, [], ?START, 1).
 
-index(Char, [Char|_], Index) -> Index;
-index(Char, List, Index) -> index(Char, tl(List), Index + 1).
+h1_loop([Ch | Rest], Values, BinAcc, I) when I =< 4 ->
+    Value = value(Ch, ?CHARSET),
+    Code = translate(Value, l),
+    h1_loop(Rest, [Value | Values], <<BinAcc/bits, Code:7>>, I + 1);
 
-translate(Index, l) ->
-    element(Index + 1, ?CODE);
+h1_loop(Chars, Values, BinAcc, I) when I == 5 ->
+    h2_loop(Chars, Values, <<BinAcc/bits, ?MIDDLE/bits>>).
 
-translate(Index, r) ->
-    127 - element(Index + 1, ?CODE). % For the second part of a barcode inversed codes are used
+h2_loop([Ch | Rest], Values, BinAcc) ->
+    Value = value(Ch, ?CHARSET),
+    Code = translate(Value, r),
+    h2_loop(Rest, [Value | Values], <<BinAcc/bits, Code:7>>);
+
+h2_loop([] = _Chars, Values, BinAcc) ->
+    CheckSum = calc_check_sum(Values),
+    io:format("Values: ~w~n", [lists:reverse(Values)]),
+    io:format("CheckSum: ~w~n", [CheckSum]),
+    CheckSumCode = translate(CheckSum, r),
+    <<BinAcc/bits, CheckSumCode:7, ?STOP/bits>>.
+
+
+-spec calc_check_sum(Values :: list(non_neg_integer())) -> CheckSum :: non_neg_integer().
+calc_check_sum(Values) ->
+    {_, Sum} = lists:foldl(fun(Value, {Odd, Sum}) ->
+                                  {not Odd, Sum + if Odd -> Value * 3; true -> Value end}
+                           end, {true, 0}, Values),
+    (10 - Sum rem 10) rem 10.
+
+
+-spec value(Char :: integer(), CharSet :: list(integer())) -> Value :: non_neg_integer().
+value(Char, CharSet) ->
+    value(Char, CharSet, 0).
+
+value(Char, [Ch | Rest], Pos) ->
+    if Char == Ch -> Pos;
+       true -> value(Char, Rest, Pos + 1)
+    end.
+
+
+-spec translate(Value :: non_neg_integer(), CodeType :: l | r) -> BitCode :: non_neg_integer().
+translate(Value, l) ->
+    element(Value + 1, ?CODE);
+
+translate(Value, r) ->
+    127 - translate(Value, l). % Inverted values
+
+-spec is_member(Char :: integer(), CharSet :: list(integer())) -> boolean().
+is_member(Char, CharSet) ->
+    lists:member(Char, CharSet).

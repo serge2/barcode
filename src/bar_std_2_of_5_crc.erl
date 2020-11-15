@@ -1,11 +1,9 @@
--module(bar_std_2_of_5).
+-module(bar_std_2_of_5_crc).
 -behaviour(barcode).
 
 -export([
          encode/1
         ]).
-
-% https://barcode-coder.com/en/standard-2-of-5-specification-103.html
 
 -define(CHARSET, "0123456789").
 -define(CODE,
@@ -36,8 +34,18 @@ loop([Ch | Rest], Values, BinAcc) ->
     loop(Rest, [Value | Values], <<BinAcc/bits, Code:14>>);
 
 loop([] = _Chars, Values, BinAcc) ->
+    CheckSum = calc_check_sum(Values),
     io:format("Values: ~w~n", [lists:reverse(Values)]),
-    <<BinAcc/bits, ?STOP/bits>>.
+    io:format("CheckSum: ~w~n", [CheckSum]),
+    CheckSumCode = translate(CheckSum),
+    <<BinAcc/bits, CheckSumCode:14, ?STOP/bits>>.
+
+-spec calc_check_sum(Values :: list(non_neg_integer())) -> CheckSum :: non_neg_integer().
+calc_check_sum(Values) ->
+    {_, Sum} = lists:foldl(fun(Value, {Odd, Sum}) ->
+                                  {not Odd, Sum + if Odd -> Value * 3; true -> Value end}
+                           end, {true, 0}, Values),
+    (10 - Sum rem 10) rem 10.
 
 -spec value(Char :: integer(), CharSet :: list(integer())) -> Value :: non_neg_integer().
 value(Char, CharSet) ->

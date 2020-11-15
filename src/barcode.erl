@@ -26,11 +26,14 @@
 
 -define(CODERS,
         [
-         {code128b,   bar_code128b},
-         {upc_a,      bar_upc_a},
-         {ean_13,     bar_ean_13},
-         {ean_8,      bar_ean_8},
-         {std_2_of_5, bar_std_2_of_5}
+         {code128,      bar_code128},
+         {upc_a,        bar_upc_a},
+         {ean13,        bar_ean_13},
+         {ean8,         bar_ean_8},
+         {code25std,    bar_std_2_of_5},
+         {code25std_crc,bar_std_2_of_5_crc},
+         {code25i,      bar_interl_2_of_5},
+         {code25icrc,   bar_interl_2_of_5_crc}
         ]).
 
 -spec save_png(Codec :: atom(), String :: unicode:chardata(), Filename :: file:filename_all()) -> ok.
@@ -65,7 +68,7 @@ encode_to_png(Codec, String, Height) ->
 
 -spec add_quiet_fields(bitstring()) -> bitstring().
 add_quiet_fields(BarCodeData) ->
-    <<0:8, BarCodeData/bits, 0:8>>.
+    <<0:10, BarCodeData/bits, 0:10>>.
 
 -spec inverse(bitstring()) -> bitstring().
 inverse(Bits) ->
@@ -147,5 +150,8 @@ bits_to_chars(<<Val:2, Bin/bits>>, Inverse, Acc) ->
 -spec encode(Type :: atom(), String :: unicode:chardata()) -> BarCodeBitmap :: bitstring().
 encode(Type, String) ->
     Module = proplists:get_value(Type, ?CODERS),
-    apply(Module, encode, [String]).
+    Bitmap = apply(Module, encode, [String]),
+    io:format("Bitmap:~p~n", [<< if B==0 -> <<"0">>; true -> <<"1">> end|| <<B:1>> <= Bitmap>>]),
+    io:format("Bits:~w~n", [bit_size(Bitmap)]),
+    Bitmap.
 

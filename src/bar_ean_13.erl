@@ -1,11 +1,13 @@
 -module(bar_ean_13).
 -behaviour(barcode).
 
+% https://en.wikipedia.org/wiki/International_Article_Number#Encoding_of_the_digits
+
 -export([
          encode/1
         ]).
 
--define(CHAR, "0123456789").
+-define(CHARSET, "0123456789").
 
 -define(HALF1_SCHEMA,
         {
@@ -38,45 +40,70 @@
 -define(MIDDLE, <<2#01010:5>>).
 -define(STOP, <<2#101:3>>).
 
--spec encode(String :: unicode:chardata()) -> BarCodeBitmap :: bitstring().
-encode(String) ->
-    [First | Chars] = string:to_graphemes(String),
-    11 == length(Chars) orelse error(incorrect_arg),
-    FirstIndex = index(First),
-    H1Schema = half1_schema(FirstIndex),
-    {Bin1, Bin2, _, Sum} =
-        lists:foldl(fun(Char, {Bin1, Bin2, I, Sum}) ->
-                           Index = index(Char),
-                           NewSum = Sum + ((I rem 2) * 2 + 1) * Index,
-                           {NewBin1, NewBin2} =
-                               if I =< 6 ->
-                                      Type = element(I, H1Schema),
-                                      {<<Bin1/bits, (translate(Index, Type)):7>>, Bin2};
-                                  true ->
-                                      {Bin1, <<Bin2/bits, (translate(Index, r)):7>>}
-                               end,
-                           {NewBin1, NewBin2, I + 1, NewSum}
-                    end, {<<>>, <<>>, 1, FirstIndex}, Chars),
-    CheckSum = (10 - Sum rem 10) rem 10,
-    CheckSumCode = <<(translate(CheckSum, r)):7>>,
-    io:format("CheckSum:~w~n", [CheckSum]),
-    <<?START/bits, Bin1/bits, ?MIDDLE/bits, Bin2/bits, CheckSumCode/bits, ?STOP/bits>>.
+-spec encode(Text :: unicode:chardata()) -> BarCodeBitmap :: bitstring() | no_return().
+encode(Text) ->
+    Chars = string:to_graphemes(Text),
+    12 == length(Chars) orelse error(incorrect_text),
+    lists:all(fun(Ch) -> is_member(Ch, ?CHARSET) end, Chars) orelse error(incorrect_text),
+    [FirstChar | RestChars] = Chars,
+    FirstValue = value(FirstChar, ?CHARSET),
+    H1CodesSchema = half1_schema(FirstValue),
+    h1_loop(RestChars, H1CodesSchema, [FirstValue], ?START, 1).
 
--spec index(Char :: integer()) -> Position :: non_neg_integer().
-index(Char) ->
-    index(Char, ?CHAR, 0).
+h1_loop([Ch | Rest], CodesSchema, Values, BinAcc, I) when I =< 6 ->
+    Value = value(Ch, ?CHARSET),
+    CodeType = element(I, CodesSchema),
+    Code = translate(Value, CodeType),
+    h1_loop(Rest, CodesSchema, [Value | Values], <<BinAcc/bits, Code:7>>, I + 1);
 
-index(Char, [Char|_], Index) -> Index;
-index(Char, List, Index) -> index(Char, tl(List), Index + 1).
+h1_loop(Chars, _CodesSchema, Values, BinAcc, I) when I == 7 ->
+    h2_loop(Chars, Values, <<BinAcc/bits, ?MIDDLE/bits>>).
 
-half1_schema(Index) ->
-    element(Index + 1, ?HALF1_SCHEMA).
 
-translate(Index, l) ->
-    element(1, element(Index + 1, ?CODE));
+h2_loop([Ch | Rest], Values, BinAcc) ->
+    Value = value(Ch, ?CHARSET),
+    Code = translate(Value, r),
+    h2_loop(Rest, [Value | Values], <<BinAcc/bits, Code:7>>);
 
-translate(Index, r) ->
-    127 - element(1, element(Index + 1, ?CODE));
+h2_loop([] = _Chars, Values, BinAcc) ->
+    CheckSum = calc_check_sum(Values),
+    io:format("Values: ~w~n", [lists:reverse(Values)]),
+    io:format("CheckSum: ~w~n", [CheckSum]),
+    CheckSumCode = translate(CheckSum, r),
+    <<BinAcc/bits, CheckSumCode:7, ?STOP/bits>>.
 
-translate(Index, g) ->
-    element(2, element(Index + 1, ?CODE)).
+
+-spec calc_check_sum(Values :: list(non_neg_integer())) -> CheckSum :: non_neg_integer().
+calc_check_sum(Values) ->
+    {_, Sum} = lists:foldl(fun(Value, {Odd, Sum}) ->
+                                  {not Odd, Sum + if Odd -> Value * 3; true -> Value end}
+                           end, {true, 0}, Values),
+    (10 - Sum rem 10) rem 10.
+
+
+-spec value(Char :: integer(), CharSet :: list(integer())) -> Value :: non_neg_integer().
+value(Char, CharSet) ->
+    value(Char, CharSet, 0).
+
+value(Char, [Ch | Rest], Pos) ->
+    if Char == Ch -> Pos;
+       true -> value(Char, Rest, Pos + 1)
+    end.
+
+
+half1_schema(Value) ->
+    element(Value + 1, ?HALF1_SCHEMA).
+
+-spec translate(Value :: non_neg_integer(), CodeType :: l | g | r) -> BitCode :: non_neg_integer().
+translate(Value, l) ->
+    element(1, element(Value + 1, ?CODE));
+
+translate(Value, r) ->
+    127 - translate(Value, l); % Inverted value
+
+translate(Value, g) ->
+    element(2, element(Value + 1, ?CODE)).
+
+-spec is_member(Char :: integer(), CharSet :: list(integer())) -> boolean().
+is_member(Char, CharSet) ->
+    lists:member(Char, CharSet).
