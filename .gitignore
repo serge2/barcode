@@ -1,0 +1,8 @@
+_build
+.settings
+.project
+*.beam
+*.o
+ebin
+log
+.rebar

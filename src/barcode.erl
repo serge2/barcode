@@ -4,9 +4,7 @@
 
 -export([
          save_png/3,
-         save_text/3,
-         encode_to_png/2,
-         encode_to_text/2
+         encode_to_png/2
         ]).
 
 -define(COLOR_TYPE_GRAYSCALE, 0).
@@ -33,7 +31,8 @@
          {code25std,    bar_std_2_of_5},
          {code25std_crc,bar_std_2_of_5_crc},
          {code25i,      bar_interl_2_of_5},
-         {code25icrc,   bar_interl_2_of_5_crc}
+         {code25icrc,   bar_interl_2_of_5_crc},
+         {pdf417,       bar_pdf417}
         ]).
 
 -spec save_png(Codec :: atom(), String :: unicode:chardata(), Filename :: file:filename_all()) -> ok.
@@ -41,18 +40,25 @@ save_png(Codec, String, Filename) ->
     Image = encode_to_png(Codec, String),
     ok = file:write_file(Filename, Image).
 
+-spec encode_to_png(Coder :: atom(), String :: unicode:chardata()) -> FileContent :: binary().
+encode_to_png(pdf417 = Coder, String) ->
+    {Width, Height, BarCode} = encode(Coder, String),
+    InvBarCode = inverse(BarCode),
 
--spec save_text(Codec :: atom(), String :: unicode:chardata(), Filename :: file:filename_all()) -> ok.
-save_text(Codec, String, Filename) ->
-    Image = encode_to_text(Codec, String),
-    ok = file:write_file(Filename, Image).
+    MAGIC = <<137, 80, 78, 71, 13, 10, 26, 10>>,
+    IHDR = png_chunk(<<"IHDR">>, create_header(#{width => Width,
+                                                 height => Height,
+                                                 bit_depth => ?BIT_DEPTH,
+                                                 color_type => ?COLOR_TYPE})),
+    IDAT = png_chunk(<<"IDAT">>, create_2dimage_data(?COLOR_TYPE, ?BIT_DEPTH, InvBarCode, Width, Height)),
+    IEND = png_chunk(<<"IEND">>, <<>>),
+    <<MAGIC/binary, IHDR/binary, IDAT/binary, IEND/binary>>;
 
 
--spec encode_to_png(Codec :: atom(), String :: unicode:chardata()) -> FileContent :: binary().
-encode_to_png(Codec, String) ->
-    encode_to_png(Codec, String, 40).
-encode_to_png(Codec, String, Height) ->
-    BarCode = encode(Codec, String),
+encode_to_png(Coder, String) ->
+    encode_to_png(Coder, String, 40).
+encode_to_png(Coder, String, Height) ->
+    BarCode = encode(Coder, String),
     QuietBarCode = add_quiet_fields(BarCode),
     InvBarCode = inverse(QuietBarCode),
 
@@ -64,6 +70,13 @@ encode_to_png(Codec, String, Height) ->
     IDAT = png_chunk(<<"IDAT">>, create_image_data(?COLOR_TYPE, ?BIT_DEPTH, InvBarCode, Height)),
     IEND = png_chunk(<<"IEND">>, <<>>),
     <<MAGIC/binary, IHDR/binary, IDAT/binary, IEND/binary>>.
+
+
+-spec encode(Type :: atom(), Text :: binary()) -> BarCodeBitmap :: bitstring().
+encode(Type, Text) ->
+    Module = proplists:get_value(Type, ?CODERS),
+    apply(Module, encode, [Text]).
+
 
 
 -spec add_quiet_fields(bitstring()) -> bitstring().
@@ -96,6 +109,16 @@ create_image_data(ColorType, BitDepth, BarCodeData, Height) ->
     Image = binary:copy(FilteredPixels, Height),
     zlib:compress(Image).
 
+create_2dimage_data(ColorType, BitDepth, Bitmap, Width, Height) ->
+    {Image, <<>>} =
+        lists:foldl(fun(_, {ImageAcc, BitmapAcc}) ->
+                            <<LineBitmap:Width/bits, NewBitmapAcc/bits>> = BitmapAcc,
+                            Scanline = gen_scanline(ColorType, BitDepth, LineBitmap),
+                            FilteredPixels = filter_scanline(Scanline),
+                            {<<ImageAcc/binary, FilteredPixels/binary>>, NewBitmapAcc}
+                     end, {<<>>, Bitmap}, lists:seq(1, Height)),
+    zlib:compress(Image).
+
 -spec padding(bitstring()) -> binary().
 padding(Bits) ->
     TailSize = bit_size(Bits) rem 8,
@@ -105,7 +128,7 @@ padding(Bits) ->
 
 gen_scanline(?COLOR_TYPE_GRAYSCALE, BitDepth, Data) when
   BitDepth == 1; BitDepth == 2; BitDepth == 4; BitDepth == 8; BitDepth == 16 ->
-    HighValue = 1 bsl BitDepth - 1,
+HighValue = 1 bsl BitDepth - 1,
     padding(<< <<(V * HighValue):BitDepth>> || <<V:1>> <= Data>>);
 
 gen_scanline(?COLOR_TYPE_RGB, BitDepth, Data) when
@@ -115,43 +138,4 @@ gen_scanline(?COLOR_TYPE_RGB, BitDepth, Data) when
 
 filter_scanline(Scanline) ->
     <<?FILTER_TYPE_NONE:8, Scanline/binary>>.
-
-
-%-define(LINES, {"█", "▌", "▐", " "}).
--define(LINES, {"██", "█ ", " █", "  "}). % Use two symbols per two bits becouse of the issue
-                                          % with display of repited "▐" characters by the konsole -
-                                          % all characrers except the first one are displayed solid
-                                          % (like character "█")
-
--spec encode_to_text(Codec :: atom(), String :: unicode:chardata()) -> FileContent :: binary().
-encode_to_text(Codec, String) ->
-    encode_to_text(Codec, String, 4).
-encode_to_text(Codec, String, Height) ->
-    encode_to_text(Codec, String, Height, true).
-encode_to_text(Codec, String, Height, Inverse) ->
-    BarCode = encode(Codec, String),
-    QuietChars = if Inverse -> element(1, ?LINES); true -> element(4, ?LINES) end,
-    Quiet = lists:duplicate(4, QuietChars),
-    Code = [Quiet, bits_to_chars(BarCode, Inverse), Quiet],
-    Blank = [lists:duplicate(string:length(Code) div 2, QuietChars), "\n"],
-    unicode:characters_to_binary([Blank, lists:duplicate(Height, [Code, "\n"]), Blank]).
-
-
--spec bits_to_chars(Bits :: bitstring(), Inverse :: boolean()) -> unicode:chardata().
-bits_to_chars(Bits, Inverse) -> bits_to_chars(Bits, Inverse, "").
-
-bits_to_chars(<<>>, _, Acc) -> Acc;
-bits_to_chars(<<Bit:1>>, Inverse, Acc) ->
-    bits_to_chars(<<Bit:1, 0:1>>, Inverse, Acc);
-bits_to_chars(<<Val:2, Bin/bits>>, Inverse, Acc) ->
-    Index = if Inverse -> Val + 1; true -> 4 - Val end,
-    bits_to_chars(Bin, Inverse, [Acc, element(Index, ?LINES)]).
-
--spec encode(Type :: atom(), String :: unicode:chardata()) -> BarCodeBitmap :: bitstring().
-encode(Type, String) ->
-    Module = proplists:get_value(Type, ?CODERS),
-    Bitmap = apply(Module, encode, [String]),
-    io:format("Bitmap:~p~n", [<< if B==0 -> <<"0">>; true -> <<"1">> end|| <<B:1>> <= Bitmap>>]),
-    io:format("Bits:~w~n", [bit_size(Bitmap)]),
-    Bitmap.
 
