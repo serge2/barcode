@@ -23,13 +23,21 @@
 -define(MIDDLE, <<2#01010:5>>).
 -define(STOP, <<2#101:3>>).
 
+-define(HEIGHT, 30).
+-define(QUIET_ZONE_SIZE, 10).
 
--spec encode(Text :: unicode:chardata()) -> BarCodeBitmap :: bitstring() | no_return().
+
+-spec encode(Text) -> {Width, Height, BarCodeBitmap} | no_return() when
+  Text :: binary(), Width::pos_integer(),
+  Height :: pos_integer(), BarCodeBitmap :: bitstring().
 encode(Text) ->
     Chars = string:to_graphemes(Text),
     7 == length(Chars) orelse error(incorrect_text),
     lists:all(fun(Ch) -> is_member(Ch, ?CHARSET) end, Chars) orelse error(incorrect_text),
-    h1_loop(Chars, [], ?START, 1).
+    Bitstring = h1_loop(Chars, [], ?START, 1),
+    Width = bit_size(Bitstring),
+    Height = ?HEIGHT,
+    {Width, Height, list_to_bitstring(lists:duplicate(Height, Bitstring))}.
 
 h1_loop([Ch | Rest], Values, BinAcc, I) when I =< 4 ->
     Value = value(Ch, ?CHARSET),
@@ -49,7 +57,7 @@ h2_loop([] = _Chars, Values, BinAcc) ->
     io:format("Values: ~w~n", [lists:reverse(Values)]),
     io:format("CheckSum: ~w~n", [CheckSum]),
     CheckSumCode = translate(CheckSum, r),
-    <<BinAcc/bits, CheckSumCode:7, ?STOP/bits>>.
+    add_quiet_zone(<<BinAcc/bits, CheckSumCode:7, ?STOP/bits>>, ?QUIET_ZONE_SIZE).
 
 
 -spec calc_check_sum(Values :: list(non_neg_integer())) -> CheckSum :: non_neg_integer().
@@ -80,3 +88,7 @@ translate(Value, r) ->
 -spec is_member(Char :: integer(), CharSet :: list(integer())) -> boolean().
 is_member(Char, CharSet) ->
     lists:member(Char, CharSet).
+
+-spec add_quiet_zone(bitstring(), non_neg_integer()) -> bitstring().
+add_quiet_zone(BarCodeData, QuietZoneSize) ->
+    <<0:QuietZoneSize, BarCodeData/bits, 0:QuietZoneSize>>.

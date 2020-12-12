@@ -1,6 +1,9 @@
 -module(barcode).
 
--callback encode(String :: unicode:chardata()) -> BarCodeBitmap :: bitstring().
+-callback encode(Text) -> {Width, Height, BarCodeBitmap} | no_return() when
+  Text :: binary(), Width::pos_integer(),
+  Height :: pos_integer(), BarCodeBitmap :: bitstring().
+
 
 -export([
          save_png/3,
@@ -41,7 +44,7 @@ save_png(Codec, String, Filename) ->
     ok = file:write_file(Filename, Image).
 
 -spec encode_to_png(Coder :: atom(), String :: unicode:chardata()) -> FileContent :: binary().
-encode_to_png(pdf417 = Coder, String) ->
+encode_to_png(Coder, String) ->
     {Width, Height, BarCode} = encode(Coder, String),
     InvBarCode = inverse(BarCode),
 
@@ -50,38 +53,17 @@ encode_to_png(pdf417 = Coder, String) ->
                                                  height => Height,
                                                  bit_depth => ?BIT_DEPTH,
                                                  color_type => ?COLOR_TYPE})),
-    IDAT = png_chunk(<<"IDAT">>, create_2dimage_data(?COLOR_TYPE, ?BIT_DEPTH, InvBarCode, Width, Height)),
-    IEND = png_chunk(<<"IEND">>, <<>>),
-    <<MAGIC/binary, IHDR/binary, IDAT/binary, IEND/binary>>;
-
-
-encode_to_png(Coder, String) ->
-    encode_to_png(Coder, String, 40).
-encode_to_png(Coder, String, Height) ->
-    BarCode = encode(Coder, String),
-    QuietBarCode = add_quiet_fields(BarCode),
-    InvBarCode = inverse(QuietBarCode),
-
-    MAGIC = <<137, 80, 78, 71, 13, 10, 26, 10>>,
-    IHDR = png_chunk(<<"IHDR">>, create_header(#{width => bit_size(InvBarCode),
-                                                 height => Height,
-                                                 bit_depth => ?BIT_DEPTH,
-                                                 color_type => ?COLOR_TYPE})),
-    IDAT = png_chunk(<<"IDAT">>, create_image_data(?COLOR_TYPE, ?BIT_DEPTH, InvBarCode, Height)),
+    IDAT = png_chunk(<<"IDAT">>, create_image_data(?COLOR_TYPE, ?BIT_DEPTH, InvBarCode, Width, Height)),
     IEND = png_chunk(<<"IEND">>, <<>>),
     <<MAGIC/binary, IHDR/binary, IDAT/binary, IEND/binary>>.
 
 
--spec encode(Type :: atom(), Text :: binary()) -> BarCodeBitmap :: bitstring().
+-spec encode(Type :: atom(), Text :: binary()) -> {Width, Height, BarCodeBitmap} | no_return() when
+  Width::pos_integer(), Height :: pos_integer(), BarCodeBitmap :: bitstring().
 encode(Type, Text) ->
     Module = proplists:get_value(Type, ?CODERS),
     apply(Module, encode, [Text]).
 
-
-
--spec add_quiet_fields(bitstring()) -> bitstring().
-add_quiet_fields(BarCodeData) ->
-    <<0:10, BarCodeData/bits, 0:10>>.
 
 -spec inverse(bitstring()) -> bitstring().
 inverse(Bits) ->
@@ -100,16 +82,10 @@ create_header(#{width := Width, height := Height, bit_depth := BitDepth, color_t
     InterlaceMethod = maps:get(interlace_method, Params, ?INTERLACE_METHOD_NONE),
     <<Width:32, Height:32, BitDepth:8, ColorType:8, CompressionMethod:8, FilterMethod:8, InterlaceMethod:8>>.
 
--spec create_image_data(ColorType, BitDepth, BarCodeData, Height) -> binary() when
+-spec create_image_data(ColorType, BitDepth, BarCodeData, Width, Height) -> binary() when
     ColorType :: 0 | 2, BitDepth :: 1 | 2 | 4 | 8 | 16, BarCodeData :: bitstring(),
-    Height :: pos_integer().
-create_image_data(ColorType, BitDepth, BarCodeData, Height) ->
-    Scanline = gen_scanline(ColorType, BitDepth, BarCodeData),
-    FilteredPixels = filter_scanline(Scanline),
-    Image = binary:copy(FilteredPixels, Height),
-    zlib:compress(Image).
-
-create_2dimage_data(ColorType, BitDepth, Bitmap, Width, Height) ->
+    Width :: pos_integer(), Height :: pos_integer().
+create_image_data(ColorType, BitDepth, Bitmap, Width, Height) ->
     {Image, <<>>} =
         lists:foldl(fun(_, {ImageAcc, BitmapAcc}) ->
                             <<LineBitmap:Width/bits, NewBitmapAcc/bits>> = BitmapAcc,

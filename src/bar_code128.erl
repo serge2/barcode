@@ -54,14 +54,23 @@
 -define(MODE_B, 2).
 -define(MODE_C, 3).
 
--spec encode(Text :: unicode:chardata()) -> BarCodeBitmap :: bitstring() | no_return().
+-define(HEIGHT, 30).
+-define(QUIET_ZONE_SIZE, 10).
+
+-spec encode(Text) -> {Width, Height, BarCodeBitmap} | no_return() when
+  Text :: binary(), Width::pos_integer(),
+  Height :: pos_integer(), BarCodeBitmap :: bitstring().
 encode(Text) ->
     Chars = string:to_graphemes(Text),
     lists:all(fun(Ch) -> Ch >= 0 andalso Ch =< 127 end, Chars) orelse error(incorrect_text),
     Mode = choose_start_mode(Chars),
     Start = start_code(Mode),
     StartValue = start_value(Mode),
-    loop(Mode, Chars, [StartValue], Start).
+    Bitstring = loop(Mode, Chars, [StartValue], Start),
+    Width = bit_size(Bitstring),
+    Height = ?HEIGHT,
+    {Width, Height, list_to_bitstring(lists:duplicate(Height, Bitstring))}.
+
 
 loop(Mode, [Ch | Rest] = Chars, Values, BinAcc) when Mode == ?MODE_A; Mode == ?MODE_B->
     case is_mode_c_optimal(Chars) of
@@ -106,7 +115,7 @@ loop(_, [], Values, BinAcc) ->
     io:format("Values: ~w~n", [lists:reverse(Values)]),
     io:format("CheckSum: ~w~n", [CheckSum]),
     CheckSumCode = translate(CheckSum),
-    <<BinAcc/bits, CheckSumCode:11, ?STOP/bits>>.
+    add_quiet_zone(<<BinAcc/bits, CheckSumCode:11, ?STOP/bits>>, ?QUIET_ZONE_SIZE).
 
 
 
@@ -193,4 +202,8 @@ translate(Value) ->
 -spec is_member(Char :: integer(), CharSet :: list(integer())) -> boolean().
 is_member(Char, CharSet) ->
     lists:member(Char, CharSet).
+
+-spec add_quiet_zone(bitstring(), non_neg_integer()) -> bitstring().
+add_quiet_zone(BarCodeData, QuietZoneSize) ->
+    <<0:QuietZoneSize, BarCodeData/bits, 0:QuietZoneSize>>.
 

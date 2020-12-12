@@ -24,11 +24,19 @@
 -define(START, <<2#11011010:8>>).
 -define(STOP,  <<2#11010110:8>>).
 
--spec encode(Text :: unicode:chardata()) -> BarCodeBitmap :: bitstring() | no_return().
+-define(HEIGHT, 30).
+-define(QUIET_ZONE_SIZE, 10).
+
+-spec encode(Text) -> {Width, Height, BarCodeBitmap} | no_return() when
+  Text :: binary(), Width::pos_integer(),
+  Height :: pos_integer(), BarCodeBitmap :: bitstring().
 encode(Text) ->
     Chars = string:to_graphemes(Text),
     lists:all(fun(Ch) -> is_member(Ch, ?CHARSET) end, Chars) orelse error(incorrect_text),
-    loop(Chars, [], ?START).
+    Bitstring = loop(Chars, [], ?START),
+    Width = bit_size(Bitstring),
+    Height = ?HEIGHT,
+    {Width, Height, list_to_bitstring(lists:duplicate(Height, Bitstring))}.
 
 loop([Ch | Rest], Values, BinAcc) ->
     Value = value(Ch, ?CHARSET),
@@ -37,7 +45,7 @@ loop([Ch | Rest], Values, BinAcc) ->
 
 loop([] = _Chars, Values, BinAcc) ->
     io:format("Values: ~w~n", [lists:reverse(Values)]),
-    <<BinAcc/bits, ?STOP/bits>>.
+    add_quiet_zone(<<BinAcc/bits, ?STOP/bits>>, ?QUIET_ZONE_SIZE).
 
 -spec value(Char :: integer(), CharSet :: list(integer())) -> Value :: non_neg_integer().
 value(Char, CharSet) ->
@@ -56,3 +64,6 @@ translate(Value) ->
 is_member(Char, CharSet) ->
     lists:member(Char, CharSet).
 
+-spec add_quiet_zone(bitstring(), non_neg_integer()) -> bitstring().
+add_quiet_zone(BarCodeData, QuietZoneSize) ->
+    <<0:QuietZoneSize, BarCodeData/bits, 0:QuietZoneSize>>.

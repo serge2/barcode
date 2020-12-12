@@ -1,6 +1,5 @@
 -module(bar_pdf417).
 -behaviour(barcode).
--compile(export_all). % For debug
 
 % The generator of PDF417 bar code symbologies
 % Mode switching is supported
@@ -1091,8 +1090,8 @@ encode(Text) ->
     FullCodewords = DataAndPad ++ EccCodewords,
     BitmapList = encode_codewords(ColsNum, RowsNum, EccLevel, FullCodewords),
     Width = bit_size(hd(BitmapList)),
-    Rows = length(BitmapList),
-    {Width, Rows, list_to_bitstring(BitmapList)}.
+    Height = length(BitmapList),
+    {Width, Height, list_to_bitstring(BitmapList)}.
 
 chars_to_codewords(Mode, SubMode, [_|_] = Chars, CodewordsAcc) ->
     {Digits, RestChars} = split_digit_chars(Chars),
@@ -1394,7 +1393,7 @@ choose_matrix_size(MinSize) ->
     {Cols, Rows, Pads}.
 
 
--spec translate(ClasterNum :: 0..2, Value :: non_neg_integer()) -> Schema :: non_neg_integer().
+-spec translate(ClusterNum :: 0..2, Value :: non_neg_integer()) -> Schema :: non_neg_integer().
 translate(ClusterNum, Value) ->
     element(ClusterNum + 1, element(Value + 1, ?SCHEMA)).
 

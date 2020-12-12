@@ -22,7 +22,12 @@
 -define(START_SCHEMA, [n,n,n,n]).
 -define(STOP_SCHEMA,  [w,n,n]).
 
--spec encode(Text :: unicode:chardata()) -> BarCodeBitmap :: bitstring() | no_return().
+-define(HEIGHT, 30).
+-define(QUIET_ZONE_SIZE, 10).
+
+-spec encode(Text) -> {Width, Height, BarCodeBitmap} | no_return() when
+  Text :: binary(), Width::pos_integer(),
+  Height :: pos_integer(), BarCodeBitmap :: bitstring().
 encode(Text) ->
     Chars = string:to_graphemes(Text),
     length(Chars) >= 1 orelse error(incorrect_text),
@@ -30,7 +35,10 @@ encode(Text) ->
     PadChars = if length(Chars) rem 2 == 0 -> Chars;
                   true -> [$0 | Chars]
                end,
-    loop(PadChars, [], gen_code(?START_SCHEMA)).
+    Bitstring = loop(PadChars, [], gen_code(?START_SCHEMA)),
+    Width = bit_size(Bitstring),
+    Height = ?HEIGHT,
+    {Width, Height, list_to_bitstring(lists:duplicate(Height, Bitstring))}.
 
 loop([Ch1, Ch2 | Rest], Values, BinAcc) ->
     Value1 = value(Ch1, ?CHARSET),
@@ -42,7 +50,7 @@ loop([Ch1, Ch2 | Rest], Values, BinAcc) ->
 
 loop([] = _Chars, Values, BinAcc) ->
     io:format("Values: ~w~n", [lists:reverse(Values)]),
-    <<BinAcc/bits, (gen_code(?STOP_SCHEMA))/bits>>.
+    add_quiet_zone(<<BinAcc/bits, (gen_code(?STOP_SCHEMA))/bits>>, ?QUIET_ZONE_SIZE).
 
 merge_schemas(Schema1, Schema2) ->
     lists:foldr(fun({W1, W2}, Acc) -> [W1, W2| Acc] end, [], lists:zip(Schema1, Schema2)).
@@ -68,7 +76,7 @@ value(Char, [Ch | Rest], Pos) ->
        true -> value(Char, Rest, Pos + 1)
     end.
 
--spec translate(Value :: non_neg_integer()) -> BitCode :: non_neg_integer().
+-spec translate(Value :: non_neg_integer()) -> list(n|w).
 translate(Value) ->
     element(Value + 1, ?SCHEMA).
 
@@ -76,3 +84,6 @@ translate(Value) ->
 is_member(Char, CharSet) ->
     lists:member(Char, CharSet).
 
+-spec add_quiet_zone(bitstring(), non_neg_integer()) -> bitstring().
+add_quiet_zone(BarCodeData, QuietZoneSize) ->
+    <<0:QuietZoneSize, BarCodeData/bits, 0:QuietZoneSize>>.
