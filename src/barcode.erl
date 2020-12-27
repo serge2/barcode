@@ -35,6 +35,7 @@
          {code25std_crc,bar_std_2_of_5_crc},
          {code25i,      bar_interl_2_of_5},
          {code25icrc,   bar_interl_2_of_5_crc},
+         {itf14,        bar_itf_14},
          {pdf417,       bar_pdf417}
         ]).
 
