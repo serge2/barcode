@@ -39,12 +39,12 @@
          {pdf417,       bar_pdf417}
         ]).
 
--spec save_png(Codec :: atom(), String :: unicode:chardata(), Filename :: file:filename_all()) -> ok.
+-spec save_png(Codec :: atom(), String :: binary(), Filename :: file:filename_all()) -> ok.
 save_png(Codec, String, Filename) ->
     Image = encode_to_png(Codec, String),
     ok = file:write_file(Filename, Image).
 
--spec encode_to_png(Coder :: atom(), String :: unicode:chardata()) -> FileContent :: binary().
+-spec encode_to_png(Coder :: atom(), String :: binary()) -> FileContent :: binary().
 encode_to_png(Coder, String) ->
     {Width, Height, BarCode} = encode(Coder, String),
     InvBarCode = inverse(BarCode),

@@ -11,6 +11,7 @@ Supported types:
 - code25std_crc (variable number of digits + 1 check)
 - code25i       (variable number of digits)
 - code2icrc     (variable number of digits + 1 check)
+- itf14         (14 digits, bearer zone)
 - pdf417        (2d, variable number of symbols, ascii, bytes)
 
 How to use
